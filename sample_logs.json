@@ -1,0 +1,72 @@
+[
+  {
+    "timestamp": "2026-06-19T10:00:00Z",
+    "level": "ERROR",
+    "message": "Database connection pool exhausted (max: 50 connections)",
+    "source": "app-server",
+    "fields": { "host": "ip-10-0-1-45", "pid": 12345, "environment": "prod" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:01Z",
+    "level": "WARN",
+    "message": "Memory usage at 85%, consider scaling horizontally",
+    "source": "db-primary",
+    "fields": { "host": "ip-10-0-1-46", "pid": 23456, "environment": "prod" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:02Z",
+    "level": "INFO",
+    "message": "Health check passed: all services operational",
+    "source": "api-gateway",
+    "fields": { "host": "ip-10-0-1-47", "pid": 34567, "environment": "staging" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:03Z",
+    "level": "DEBUG",
+    "message": "Request processed in 42ms: GET /api/search?q=logs",
+    "source": "search-indexer",
+    "fields": { "host": "ip-10-0-1-48", "pid": 45678, "environment": "dev" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:04Z",
+    "level": "ERROR",
+    "message": "TLS handshake failed: certificate expired for host api.example.com",
+    "source": "load-balancer",
+    "fields": { "host": "ip-10-0-1-49", "pid": 56789, "environment": "prod" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:05Z",
+    "level": "WARN",
+    "message": "Certificate for api.example.com expires in 3 days",
+    "source": "monitoring",
+    "fields": { "host": "ip-10-0-1-50", "pid": 67890, "environment": "prod" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:06Z",
+    "level": "INFO",
+    "message": "Deployment v2.1.3 rolled out to production",
+    "source": "kibana",
+    "fields": { "host": "ip-10-0-1-51", "pid": 78901, "environment": "prod" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:07Z",
+    "level": "TRACE",
+    "message": "Span [db.query] started for request req-abc-123",
+    "source": "app-server",
+    "fields": { "host": "ip-10-0-1-52", "pid": 89012, "environment": "staging" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:08Z",
+    "level": "ERROR",
+    "message": "Out of memory: killed process app-server (pid 12345)",
+    "source": "worker-queue",
+    "fields": { "host": "ip-10-0-1-53", "pid": 90123, "environment": "prod" }
+  },
+  {
+    "timestamp": "2026-06-19T10:00:09Z",
+    "level": "INFO",
+    "message": "Cache warmed with 1500 entries from database",
+    "source": "cache-redis",
+    "fields": { "host": "ip-10-0-1-54", "pid": 1234, "environment": "prod" }
+  }
+]
