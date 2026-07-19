@@ -153,6 +153,9 @@ func (m model) renderDetailView() string {
 	if len(e.Fields) > 0 {
 		fieldLines = append(fieldLines, lipgloss.NewStyle().Bold(true).Render("Fields:"))
 		for k, v := range e.Fields {
+			if v == nil {
+				continue
+			}
 			fieldLines = append(fieldLines, fmt.Sprintf("  %s: %v",
 				lipgloss.NewStyle().Foreground(colorAccent).Render(k), v))
 		}
