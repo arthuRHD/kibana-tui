@@ -46,12 +46,7 @@ type model struct {
 	loadErr    error
 	loadStart  time.Time
 
-	filePath   string
-	esAddr     string
-	esIndex    string
-	esUser     string
-	esPass     string
-	sampleSize int
+	config AppConfig
 }
 
 type loadCompleteMsg struct {
@@ -135,24 +130,27 @@ func (m model) Init() tea.Cmd {
 			var err error
 
 			switch {
-			case m.esAddr != "":
+			case m.config.ESAddr != "":
 				cfg := ESConfig{
-					Address:  m.esAddr,
-					Index:    m.esIndex,
-					Username: m.esUser,
-					Password: m.esPass,
-					Size:     m.sampleSize,
+					Address:  m.config.ESAddr,
+					Index:    m.config.ESIndex,
+					Username: m.config.ESUser,
+					Password: m.config.ESPass,
+					APIKey:   m.config.ESAPIKey,
+					CACert:   m.config.ESCACert,
+					Insecure: m.config.ESInsecure,
+					Size:     m.config.SampleSize,
 				}
 				entries, err = queryES(cfg)
 				if err == nil && len(entries) == 0 {
-					err = fmt.Errorf("no entries found in index %s", m.esIndex)
+					err = fmt.Errorf("no entries found in index %s", m.config.ESIndex)
 				}
 
-			case m.filePath != "":
-				entries, err = loadFromFile(m.filePath)
+			case m.config.FilePath != "":
+				entries, err = loadFromFile(m.config.FilePath)
 
 			default:
-				entries = generateSampleData(m.sampleSize)
+				entries = generateSampleData(m.config.SampleSize)
 			}
 
 			return loadCompleteMsg{entries: entries, source: m.sourceName, err: err}

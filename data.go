@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -157,6 +160,9 @@ type ESConfig struct {
 	Index    string
 	Username string
 	Password string
+	APIKey   string
+	CACert   string
+	Insecure bool
 	Size     int
 }
 
@@ -167,6 +173,31 @@ func queryES(cfg ESConfig) ([]LogEntry, error) {
 	if cfg.Username != "" {
 		esCfg.Username = cfg.Username
 		esCfg.Password = cfg.Password
+	}
+	if cfg.APIKey != "" {
+		esCfg.APIKey = cfg.APIKey
+	}
+
+	tlsCfg := &tls.Config{}
+	if cfg.Insecure {
+		tlsCfg.InsecureSkipVerify = true
+	}
+	if cfg.CACert != "" {
+		caCert, err := os.ReadFile(cfg.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("reading CA certificate: %w", err)
+		}
+		tlsCfg.RootCAs, err = x509.SystemCertPool()
+		if err != nil {
+			tlsCfg.RootCAs = x509.NewCertPool()
+		}
+		tlsCfg.RootCAs.AppendCertsFromPEM(caCert)
+	}
+
+	if cfg.Insecure || cfg.CACert != "" {
+		esCfg.Transport = &http.Transport{
+			TLSClientConfig: tlsCfg,
+		}
 	}
 
 	es, err := elasticsearch.NewClient(esCfg)
