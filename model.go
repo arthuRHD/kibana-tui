@@ -18,6 +18,7 @@ const (
 	stateDetail
 	stateExport
 	stateFilter
+	stateEsql
 )
 
 type model struct {
@@ -41,6 +42,11 @@ type model struct {
 	exportInput textinput.Model
 	exportMsg   string
 
+	esqlInput   textinput.Model
+	esqlRunning bool
+	esqlError   error
+	esqlQuery   string
+
 	sourceName string
 	loading    bool
 	loadErr    error
@@ -59,6 +65,12 @@ type tickMsg struct {
 	time time.Time
 }
 
+type loadEsqlMsg struct {
+	entries []LogEntry
+	source  string
+	err     error
+}
+
 func initialModel() model {
 	si := textinput.New()
 	si.Placeholder = "type query and press Enter..."
@@ -72,10 +84,17 @@ func initialModel() model {
 	ei.CharLimit = 200
 	ei.Width = 40
 
+	esqli := textinput.New()
+	esqli.Placeholder = "FROM logs-* | WHERE ... | LIMIT 100"
+	esqli.Prompt = "esql> "
+	esqli.CharLimit = 500
+	esqli.Width = 60
+
 	return model{
 		state:       stateBrowse,
 		searchInput: si,
 		exportInput: ei,
+		esqlInput:   esqli,
 		levelFilter: "ALL",
 		filterIdx:   0,
 		selected:    0,
@@ -109,7 +128,7 @@ func (m model) headerHeight() int {
 }
 
 func (m model) footerHeight() int {
-	if m.state == stateSearch {
+	if m.state == stateSearch || m.state == stateEsql {
 		return 2
 	}
 	return 1
@@ -168,6 +187,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.searchInput.Width = max(20, msg.Width-50)
 		m.exportInput.Width = max(20, msg.Width-30)
+		m.esqlInput.Width = max(20, msg.Width-30)
 		return m, nil
 
 	case loadCompleteMsg:
@@ -179,6 +199,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sourceName = msg.source
 		}
 		m.updateFiltered()
+		return m, nil
+
+	case loadEsqlMsg:
+		m.esqlRunning = false
+		if msg.err != nil {
+			m.esqlError = msg.err
+		} else {
+			m.esqlInput.Blur()
+			m.entries = msg.entries
+			m.sourceName = msg.source
+			m.esqlError = nil
+			m.searchQuery = ""
+			m.levelFilter = "ALL"
+			m.updateFiltered()
+			m.state = stateBrowse
+		}
 		return m, nil
 
 	case tickMsg:
@@ -210,6 +246,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateExport(msg)
 		case stateFilter:
 			return m.updateFilter(msg)
+		case stateEsql:
+			return m.updateEsql(msg)
 		}
 
 	default:
@@ -223,6 +261,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case stateExport:
 			var cmd tea.Cmd
 			m.exportInput, cmd = m.exportInput.Update(msg)
+			return m, cmd
+		case stateEsql:
+			var cmd tea.Cmd
+			m.esqlInput, cmd = m.esqlInput.Update(msg)
 			return m, cmd
 		}
 	}
@@ -284,6 +326,12 @@ func (m model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailIdx = m.selected
 			m.state = stateDetail
 		}
+	case "Q":
+		m.state = stateEsql
+		m.esqlInput.Focus()
+		m.esqlError = nil
+		m.esqlRunning = false
+		return m, textinput.Blink
 	case "q":
 		return m, tea.Quit
 	}
@@ -397,6 +445,60 @@ func (m model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) updateEsql(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		if m.esqlError != nil {
+			m.esqlError = nil
+			m.esqlInput.Focus()
+			return m, textinput.Blink
+		}
+		query := strings.TrimSpace(m.esqlInput.Value())
+		if query == "" {
+			return m, nil
+		}
+		m.esqlQuery = query
+		m.esqlRunning = true
+		m.esqlError = nil
+		m.selected = 0
+		m.topRow = 0
+		cfg := ESConfig{
+			Address:  m.config.ESAddr,
+			Index:    m.config.ESIndex,
+			Username: m.config.ESUser,
+			Password: m.config.ESPass,
+			APIKey:   m.config.ESAPIKey,
+			CACert:   m.config.ESCACert,
+			Insecure: m.config.ESInsecure,
+		}
+		return m, func() tea.Msg {
+			entries, err := queryESQL(cfg, query)
+			source := fmt.Sprintf("ES|QL: %s", query)
+			return loadEsqlMsg{entries: entries, source: source, err: err}
+		}
+	case "esc":
+		m.esqlInput.SetValue("")
+		m.esqlInput.Blur()
+		m.esqlError = nil
+		m.state = stateBrowse
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	default:
+		if m.esqlRunning {
+			return m, nil
+		}
+		if m.esqlError != nil {
+			m.esqlError = nil
+			m.esqlInput.Focus()
+			return m, textinput.Blink
+		}
+		var cmd tea.Cmd
+		m.esqlInput, cmd = m.esqlInput.Update(msg)
+		return m, cmd
+	}
+}
+
 func (m model) View() string {
 	if m.loading {
 		return m.loadingView()
@@ -434,6 +536,25 @@ func (m model) View() string {
 			m.renderFilterView(),
 			lipgloss.WithWhitespaceBackground(colorBase),
 		)
+	case stateEsql:
+		if m.esqlRunning {
+			body = lipgloss.Place(m.width, bodyH,
+				lipgloss.Center, lipgloss.Center,
+				m.renderEsqlLoadingView(),
+				lipgloss.WithWhitespaceBackground(colorBase),
+			)
+		} else if m.esqlError != nil {
+			body = lipgloss.Place(m.width, bodyH,
+				lipgloss.Center, lipgloss.Center,
+				m.renderEsqlErrorView(),
+				lipgloss.WithWhitespaceBackground(colorBase),
+			)
+		} else {
+			body = m.renderTable()
+			if body == "" {
+				body = strings.Repeat("\n", bodyH)
+			}
+		}
 	default:
 		body = m.renderTable()
 		if body == "" {

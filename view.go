@@ -245,6 +245,9 @@ func (m model) renderFooter() string {
 	if m.state == stateSearch {
 		return m.renderSearchBar()
 	}
+	if m.state == stateEsql {
+		return m.renderEsqlBar()
+	}
 
 	keys := []struct {
 		key  string
@@ -255,6 +258,7 @@ func (m model) renderFooter() string {
 		{"Enter", "detail"},
 		{"e", "export"},
 		{"f", "filter"},
+		{"Q", "esql"},
 		{"g/G", "top/bot"},
 		{"q", "quit"},
 	}
@@ -307,4 +311,65 @@ func (m model) emptyView(msg string) string {
 	)
 
 	return full
+}
+
+func (m model) renderEsqlBar() string {
+	query := m.esqlQuery
+	if !m.esqlRunning {
+		query = m.esqlInput.Value()
+	}
+	prompt := searchPromptStyle.Render(" esql> ")
+	input := ""
+	if m.esqlRunning {
+		input = lipgloss.NewStyle().Foreground(colorDim).Render(query + " ...")
+	} else {
+		input = m.esqlInput.View()
+	}
+	if input == "" {
+		input = " "
+	}
+	content := lipgloss.JoinHorizontal(lipgloss.Top, prompt, input)
+	return searchBarStyle.Width(m.width).Render(content)
+}
+
+func (m model) renderEsqlLoadingView() string {
+	msg := fmt.Sprintf(" Running ES|QL query...\n\n  %s",
+		lipgloss.NewStyle().Foreground(colorDim).Render(m.esqlQuery))
+
+	box := overlayBoxStyle.
+		Width(60).
+		Render(lipgloss.JoinVertical(lipgloss.Center,
+			lipgloss.NewStyle().Foreground(colorAccent).Bold(true).Render(" ES|QL Query "),
+			"",
+			msg,
+			"",
+			lipgloss.NewStyle().Foreground(colorDim).Render(" Please wait "),
+		))
+
+	return box
+}
+
+func (m model) renderEsqlErrorView() string {
+	title := lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(" ES|QL Error ")
+
+	errMsg := lipgloss.NewStyle().Foreground(colorText).Render(fmt.Sprintf("  %v", m.esqlError))
+	queryInfo := lipgloss.NewStyle().Foreground(colorDim).Render(fmt.Sprintf("  Query: %s", m.esqlQuery))
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		"",
+		errMsg,
+		"",
+		queryInfo,
+		"",
+		lipgloss.NewStyle().Foreground(colorDim).Render(" Press Esc or Q to retry "),
+	)
+
+	availW := max(min(m.width-8, 60), 40)
+	box := overlayBoxStyle.
+		BorderForeground(colorRed).
+		Width(availW).
+		Render(content)
+
+	return box
 }

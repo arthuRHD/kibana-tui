@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -167,52 +169,9 @@ type ESConfig struct {
 }
 
 func queryES(cfg ESConfig) ([]LogEntry, error) {
-	esCfg := elasticsearch.Config{
-		Addresses: []string{cfg.Address},
-	}
-	if cfg.Username != "" {
-		esCfg.Username = cfg.Username
-		esCfg.Password = cfg.Password
-	}
-	if cfg.APIKey != "" {
-		esCfg.APIKey = cfg.APIKey
-	}
-
-	tlsCfg := &tls.Config{}
-	if cfg.Insecure {
-		tlsCfg.InsecureSkipVerify = true
-	}
-	if cfg.CACert != "" {
-		caCert, err := os.ReadFile(cfg.CACert)
-		if err != nil {
-			return nil, fmt.Errorf("reading CA certificate: %w", err)
-		}
-		tlsCfg.RootCAs, err = x509.SystemCertPool()
-		if err != nil {
-			tlsCfg.RootCAs = x509.NewCertPool()
-		}
-		tlsCfg.RootCAs.AppendCertsFromPEM(caCert)
-	}
-
-	if cfg.Insecure || cfg.CACert != "" {
-		esCfg.Transport = &http.Transport{
-			TLSClientConfig: tlsCfg,
-		}
-	}
-
-	es, err := elasticsearch.NewClient(esCfg)
+	es, err := newESClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("creating ES client: %w", err)
-	}
-
-	pingRes, err := es.Ping()
-	if err != nil {
-		return nil, fmt.Errorf("connecting to ES: %w", err)
-	}
-	defer pingRes.Body.Close()
-
-	if pingRes.IsError() {
-		return nil, fmt.Errorf("ES ping failed: %s", pingRes.String())
+		return nil, err
 	}
 
 	query := `{
@@ -351,4 +310,116 @@ func filterEntries(entries []LogEntry, query, levelFilter string) []LogEntry {
 	}
 
 	return result
+}
+
+func newESClient(cfg ESConfig) (*elasticsearch.Client, error) {
+	esCfg := elasticsearch.Config{
+		Addresses: []string{cfg.Address},
+	}
+	if cfg.Username != "" {
+		esCfg.Username = cfg.Username
+		esCfg.Password = cfg.Password
+	}
+	if cfg.APIKey != "" {
+		esCfg.APIKey = cfg.APIKey
+	}
+
+	tlsCfg := &tls.Config{}
+	if cfg.Insecure {
+		tlsCfg.InsecureSkipVerify = true
+	}
+	if cfg.CACert != "" {
+		caCert, err := os.ReadFile(cfg.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("reading CA certificate: %w", err)
+		}
+		tlsCfg.RootCAs, err = x509.SystemCertPool()
+		if err != nil {
+			tlsCfg.RootCAs = x509.NewCertPool()
+		}
+		tlsCfg.RootCAs.AppendCertsFromPEM(caCert)
+	}
+
+	if cfg.Insecure || cfg.CACert != "" {
+		esCfg.Transport = &http.Transport{
+			TLSClientConfig: tlsCfg,
+		}
+	}
+
+	es, err := elasticsearch.NewClient(esCfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating ES client: %w", err)
+	}
+
+	pingRes, err := es.Ping()
+	if err != nil {
+		return nil, fmt.Errorf("connecting to ES: %w", err)
+	}
+	defer pingRes.Body.Close()
+
+	if pingRes.IsError() {
+		return nil, fmt.Errorf("ES ping failed: %s", pingRes.String())
+	}
+
+	return es, nil
+}
+
+func queryESQL(cfg ESConfig, esqlQuery string) ([]LogEntry, error) {
+	es, err := newESClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := json.Marshal(map[string]string{"query": esqlQuery})
+	if err != nil {
+		return nil, fmt.Errorf("encoding ES|QL body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", "/_query", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := es.Perform(req)
+	if err != nil {
+		return nil, fmt.Errorf("ES|QL query: %w", err)
+	}
+	defer res.Body.Close()
+
+	rawBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading ES|QL response: %w", err)
+	}
+
+	if res.StatusCode >= 400 {
+		return nil, fmt.Errorf("ES|QL query error (status %d): %s", res.StatusCode, string(rawBody))
+	}
+
+	var result struct {
+		Columns []struct {
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"columns"`
+		Values [][]any `json:"values"`
+	}
+	if err := json.Unmarshal(rawBody, &result); err != nil {
+		return nil, fmt.Errorf("decoding ES|QL response: %w", err)
+	}
+
+	var entries []LogEntry
+	for _, row := range result.Values {
+		source := make(map[string]interface{})
+		for i, val := range row {
+			if i < len(result.Columns) {
+				source[result.Columns[i].Name] = val
+			}
+		}
+		entry := mapToLogEntry(source)
+		if entry != nil {
+			entries = append(entries, *entry)
+		}
+	}
+
+	return entries, nil
 }
