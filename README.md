@@ -5,7 +5,7 @@ An easy way to see logs when your kibana instance is too slow.
 ## Install
 
 ```sh
-go install github.com/arthur-richard/kibana-tui@latest
+go install github.com/arthuRHD/kibana-tui@latest
 ```
 
 ## Config

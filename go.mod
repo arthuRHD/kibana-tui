@@ -1,4 +1,4 @@
-module github.com/arthur/kibana-tui
+module github.com/arthuRHD/kibana-tui
 
 go 1.23.0
 
