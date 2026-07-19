@@ -16,8 +16,9 @@ type AppConfig struct {
 	ESPass     string `mapstructure:"es_pass"`
 	ESAPIKey   string `mapstructure:"es_apikey"`
 	ESCACert   string `mapstructure:"es_cacert"`
-	ESInsecure bool   `mapstructure:"es_insecure"`
-	SampleSize int    `mapstructure:"sample_size"`
+	ESInsecure         bool   `mapstructure:"es_insecure"`
+	SampleSize         int    `mapstructure:"sample_size"`
+	ESDefaultESQLQuery string `mapstructure:"es_default_esql_query"`
 }
 
 func (c AppConfig) SourceName() string {
@@ -70,6 +71,7 @@ func loadConfig() AppConfig {
 	v.BindEnv("es_cacert")
 	v.BindEnv("es_insecure")
 	v.BindEnv("sample_size")
+	v.BindEnv("es_default_esql_query")
 
 	var cfg AppConfig
 	if err := v.Unmarshal(&cfg); err != nil {

@@ -14,6 +14,9 @@ func main() {
 	m := initialModel()
 	m.config = cfg
 	m.sourceName = cfg.SourceName()
+	if cfg.ESDefaultESQLQuery != "" {
+		m.esqlInput.SetValue(cfg.ESDefaultESQLQuery)
+	}
 	m.loading = true
 	m.loadStart = time.Now()
 
