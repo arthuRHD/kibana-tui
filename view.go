@@ -54,21 +54,23 @@ func (m model) renderTable() string {
 		colTSW  = 20
 		colLvlW = 6
 		colSrcW = 16
+		colScrW = 2
 	)
 
 	sepChars := " \u2502 "
 	sepW := 3
 	totalSep := sepW * 4
-	msgW := max(availW-colNumW-colTSW-colLvlW-colSrcW-totalSep-1, 10)
+	msgW := max(availW-colNumW-colTSW-colLvlW-colSrcW-colScrW-totalSep-1, 10)
 
 	hdrNum := lipgloss.NewStyle().Width(colNumW - 1).Render("#")
 	hdrTS := lipgloss.NewStyle().Width(colTSW - 1).Render("TIMESTAMP")
 	hdrLvl := lipgloss.NewStyle().Width(colLvlW - 1).Render("LEVEL")
 	hdrMsg := lipgloss.NewStyle().Width(msgW).Render("MESSAGE")
 	hdrSrc := lipgloss.NewStyle().Width(colSrcW - 1).Render("SOURCE")
+	scrollHdr := lipgloss.NewStyle().Width(colScrW - 1).Render("")
 
 	hdrParts := []string{
-		" " + hdrNum, sepChars, hdrTS, sepChars, hdrLvl, sepChars, hdrMsg, sepChars, hdrSrc,
+		" " + hdrNum, sepChars, hdrTS, sepChars, hdrLvl, sepChars, hdrMsg, sepChars, hdrSrc, sepChars, scrollHdr,
 	}
 	header := tableHeaderStyle.Render(
 		lipgloss.JoinHorizontal(lipgloss.Top, hdrParts...),
@@ -79,6 +81,14 @@ func (m model) renderTable() string {
 	}
 
 	m.ensureVisible(rowsAvail)
+
+	scrollBar := makeScrollBar(len(m.filtered), m.topRow, rowsAvail, colScrW-1)
+
+	styleNum := colNumStyle.Width(colNumW - 1)
+	styleTS := colTSStyle.Width(colTSW - 1)
+	styleMsg := lipgloss.NewStyle().Width(msgW)
+	styleSrc := colSrcStyle.Width(colSrcW - 1)
+	styleScroll := lipgloss.NewStyle().Width(colScrW - 1)
 
 	var rows []string
 	endIdx := min(len(m.filtered), m.topRow+rowsAvail)
@@ -104,19 +114,20 @@ func (m model) renderTable() string {
 			src = src[:colSrcW-5] + "..."
 		}
 
-		styleNum := lipgloss.NewStyle().Width(colNumW - 1)
-		styleTS := lipgloss.NewStyle().Width(colTSW - 1).Foreground(colorDim)
-		styleMsg := lipgloss.NewStyle().Width(msgW)
-		styleSrc := lipgloss.NewStyle().Width(colSrcW - 1).Foreground(colorDim)
-
 		numStr := styleNum.Render(rowNum)
 		tsStr := styleTS.Render(ts)
-		lvlStr := lipgloss.NewStyle().Width(colLvlW - 1).Render(levelStyles[lvl].Render(lvl))
+		lvlStr := lipgloss.NewStyle().Width(colLvlW - 1).Render(levelDisplayStrings[lvl])
 		msgStr := styleMsg.Render(msg)
 		srcStr := styleSrc.Render(src)
+		scrStr := ""
+
+		relIdx := i - m.topRow
+		if relIdx >= 0 && relIdx < len(scrollBar) {
+			scrStr = styleScroll.Render(scrollBar[relIdx])
+		}
 
 		parts := []string{
-			" " + numStr, sepChars, tsStr, sepChars, lvlStr, sepChars, msgStr, sepChars, srcStr,
+			" " + numStr, sepChars, tsStr, sepChars, lvlStr, sepChars, msgStr, sepChars, srcStr, sepChars, scrStr,
 		}
 
 		row := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
@@ -124,6 +135,27 @@ func (m model) renderTable() string {
 	}
 
 	return header + "\n" + strings.Join(rows, "\n")
+}
+
+func makeScrollBar(total, offset, visible, width int) []string {
+	if total <= visible || width < 1 {
+		return nil
+	}
+
+	trackH := visible
+	thumbH := max(1, int(float64(visible)/float64(total)*float64(visible)))
+	thumbTop := int(float64(offset) / float64(total) * float64(visible))
+	thumbTop = min(thumbTop, trackH-thumbH)
+
+	bar := make([]string, trackH)
+	for i := 0; i < trackH; i++ {
+		if i >= thumbTop && i < thumbTop+thumbH {
+			bar[i] = "\u2588"
+		} else {
+			bar[i] = "\u2502"
+		}
+	}
+	return bar
 }
 
 func (m model) renderDetailView() string {
@@ -150,25 +182,60 @@ func (m model) renderDetailView() string {
 		lipgloss.NewStyle().Render(e.Message)
 
 	var fieldLines []string
+	fieldCount := 0
 	if len(e.Fields) > 0 {
 		fieldLines = append(fieldLines, lipgloss.NewStyle().Bold(true).Render("Fields:"))
+		fieldCount++
 		for k, v := range e.Fields {
 			if v == nil {
 				continue
 			}
 			fieldLines = append(fieldLines, fmt.Sprintf("  %s: %v",
 				lipgloss.NewStyle().Foreground(colorAccent).Render(k), v))
+			fieldCount++
 		}
+	}
+
+	availH := max(1, m.bodyHeight()-6)
+	fieldAvailH := max(0, availH-8)
+	fieldScrollVisible := fieldCount > fieldAvailH && fieldAvailH > 0
+
+	var visibleFields []string
+	scrollBar := makeScrollBar(fieldCount, m.detailFieldOff, fieldAvailH, 1)
+
+	if fieldScrollVisible {
+		m.detailFieldOff = min(m.detailFieldOff, fieldCount-fieldAvailH)
+		start := min(m.detailFieldOff, max(0, fieldCount-fieldAvailH))
+		end := min(fieldCount, start+fieldAvailH)
+		for i := start; i < end; i++ {
+			scrChar := " "
+			relIdx := i - start
+			if relIdx >= 0 && relIdx < len(scrollBar) {
+				scrChar = scrollBar[relIdx]
+			}
+			visibleFields = append(visibleFields, fmt.Sprintf(" %s %s", scrChar, fieldLines[i]))
+		}
+	} else {
+		for _, fl := range fieldLines {
+			visibleFields = append(visibleFields, "  "+fl)
+		}
+	}
+
+	posInfo := ""
+	if fieldScrollVisible {
+		posInfo = lipgloss.NewStyle().Foreground(colorDim).Render(
+			fmt.Sprintf(" Fields %d-%d of %d ", m.detailFieldOff+1,
+				min(m.detailFieldOff+fieldAvailH, fieldCount), fieldCount))
 	}
 
 	var contentParts []string
 	contentParts = append(contentParts, title, navInfo, "", ts, lvl, src, "",
 		lipgloss.NewStyle().Width(50).Render(msg))
-	if len(fieldLines) > 0 {
-		contentParts = append(contentParts, "", strings.Join(fieldLines, "\n"))
+	if len(visibleFields) > 0 {
+		contentParts = append(contentParts, "", strings.Join(visibleFields, "\n"))
 	}
-	contentParts = append(contentParts, "",
-		lipgloss.NewStyle().Foreground(colorDim).Render(" \u2191\u2193 navigate  Esc close "))
+	contentParts = append(contentParts, "", posInfo,
+		lipgloss.NewStyle().Foreground(colorDim).Render(" \u2191\u2193 navigate  PgUp/PgDn scroll  Esc close "))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
 
@@ -310,7 +377,6 @@ func (m model) emptyView(msg string) string {
 	full := lipgloss.Place(availW, bodyH,
 		lipgloss.Center, lipgloss.Center,
 		content,
-		lipgloss.WithWhitespaceBackground(colorBase),
 	)
 
 	return full

@@ -37,7 +37,8 @@ type model struct {
 	levelFilter string
 	filterIdx   int
 
-	detailIdx int
+	detailIdx       int
+	detailFieldOff  int
 
 	exportInput textinput.Model
 	exportMsg   string
@@ -371,19 +372,36 @@ func (m model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	prevIdx := m.detailIdx
+
+	allowedFieldScroll := 0
+	if m.detailIdx >= 0 && m.detailIdx < len(m.filtered) {
+		allowedFieldScroll = max(0, len(m.filtered[m.detailIdx].Fields)-max(1, m.bodyHeight()/2-5))
+	}
+
 	switch msg.String() {
 	case "esc", "enter", " ", "q":
 		m.state = stateBrowse
 	case "up", "k":
-		if m.detailIdx > 0 {
+		if m.detailFieldOff > 0 {
+			m.detailFieldOff--
+		} else if m.detailIdx > 0 {
 			m.detailIdx--
+			m.detailFieldOff = 0
 		}
 	case "down", "j":
-		if m.detailIdx < len(m.filtered)-1 {
+		if m.detailFieldOff < allowedFieldScroll {
+			m.detailFieldOff++
+		} else if m.detailIdx < len(m.filtered)-1 {
 			m.detailIdx++
+			m.detailFieldOff = 0
 		}
 	case "ctrl+c":
 		return m, tea.Quit
+	}
+
+	if prevIdx != m.detailIdx {
+		m.detailFieldOff = 0
 	}
 	return m, nil
 }
@@ -522,32 +540,27 @@ func (m model) View() string {
 		body = lipgloss.Place(m.width, bodyH,
 			lipgloss.Center, lipgloss.Center,
 			m.renderDetailView(),
-			lipgloss.WithWhitespaceBackground(colorBase),
 		)
 	case stateExport:
 		body = lipgloss.Place(m.width, bodyH,
 			lipgloss.Center, lipgloss.Center,
 			m.renderExportView(),
-			lipgloss.WithWhitespaceBackground(colorBase),
 		)
 	case stateFilter:
 		body = lipgloss.Place(m.width, bodyH,
 			lipgloss.Center, lipgloss.Center,
 			m.renderFilterView(),
-			lipgloss.WithWhitespaceBackground(colorBase),
 		)
 	case stateEsql:
 		if m.esqlRunning {
 			body = lipgloss.Place(m.width, bodyH,
 				lipgloss.Center, lipgloss.Center,
 				m.renderEsqlLoadingView(),
-				lipgloss.WithWhitespaceBackground(colorBase),
 			)
 		} else if m.esqlError != nil {
 			body = lipgloss.Place(m.width, bodyH,
 				lipgloss.Center, lipgloss.Center,
 				m.renderEsqlErrorView(),
-				lipgloss.WithWhitespaceBackground(colorBase),
 			)
 		} else {
 			body = m.renderTable()
@@ -602,7 +615,6 @@ func (m model) loadingView() string {
 	return lipgloss.Place(80, 24,
 		lipgloss.Center, lipgloss.Center,
 		box,
-		lipgloss.WithWhitespaceBackground(colorBase),
 	)
 }
 
@@ -624,6 +636,5 @@ func (m model) errorView() string {
 	return lipgloss.Place(80, 24,
 		lipgloss.Center, lipgloss.Center,
 		box,
-		lipgloss.WithWhitespaceBackground(colorBase),
 	)
 }

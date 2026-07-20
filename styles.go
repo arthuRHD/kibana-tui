@@ -31,8 +31,7 @@ var (
 	selectedRowStyle = lipgloss.NewStyle().
 				Background(colorSurface)
 
-	altRowStyle = lipgloss.NewStyle().
-			Background(colorBase)
+	altRowStyle = lipgloss.NewStyle()
 
 	footerStyle = lipgloss.NewStyle().
 			Background(colorMantle).
@@ -74,6 +73,18 @@ var (
 
 	helpStyle = lipgloss.NewStyle().Foreground(colorDim)
 	keyStyle  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+
+	colNumStyle = lipgloss.NewStyle()
+	colTSStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	colSrcStyle = lipgloss.NewStyle().Foreground(colorDim)
+
+	levelDisplayStrings = map[string]string{
+		"ERROR": lipgloss.NewStyle().Foreground(colorError).Bold(true).Render("ERROR"),
+		"WARN":  lipgloss.NewStyle().Foreground(colorWarn).Bold(true).Render("WARN "),
+		"INFO":  lipgloss.NewStyle().Foreground(colorInfo).Render("INFO "),
+		"DEBUG": lipgloss.NewStyle().Foreground(colorDebug).Render("DEBUG"),
+		"TRACE": lipgloss.NewStyle().Foreground(colorTrace).Render("TRACE"),
+	}
 )
 
 func levelColor(level string) lipgloss.Color {
